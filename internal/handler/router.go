@@ -12,6 +12,7 @@ type API struct {
 	Readers *ReaderHandler
 	Loans   *LoanHandler
 	Search  *SearchHandler
+	Admin   *AdminHandler
 }
 
 func (a *API) Routes() http.Handler {
@@ -60,6 +61,10 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/loans/{id}/return", a.Loans.Return)
 
 	mux.HandleFunc("GET /api/v1/search", a.Search.Search)
+
+	if a.Admin != nil {
+		mux.HandleFunc("POST /api/v1/admin/seed", a.Admin.Seed)
+	}
 
 	return mux
 }

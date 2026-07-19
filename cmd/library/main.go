@@ -50,6 +50,7 @@ func main() {
 		Readers: handler.NewReaderHandler(service.NewReaderService(repos)),
 		Loans:   handler.NewLoanHandler(service.NewLoanService(repos, cfg, publisher)),
 		Search:  handler.NewSearchHandler(service.NewSearchService(search.NewNoopSearchRepository())),
+		Admin:   handler.NewAdminHandler(repos, cfg.AdminToken, logger),
 	}
 
 	server := &http.Server{

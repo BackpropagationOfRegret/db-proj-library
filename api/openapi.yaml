@@ -12,6 +12,7 @@ tags:
   - name: Readers
   - name: Loans
   - name: Search
+  - name: Admin
 paths:
   /health:
     get:
@@ -264,7 +265,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResult"
 
+  /api/v1/admin/seed:
+    post:
+      tags: [Admin]
+      summary: Seed database with fake data
+      description: Требует заголовок X-Admin-Token (или Authorization Bearer), совпадающий с ADMIN_TOKEN.
+      operationId: adminSeed
+      security:
+        - AdminToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeedRequest"
+            example:
+              mode: reset
+              authors: 100
+              books: 1000
+              readers: 500
+              loans: 2000
+              reservations: 200
+              batch_size: 500
+      responses:
+        "200":
+          description: Seed completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeedResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
 components:
+  securitySchemes:
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
   parameters:
     ID:
       name: id
@@ -522,3 +562,54 @@ components:
           type: integer
         size:
           type: integer
+
+    SeedRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [seed, reset, append]
+          default: reset
+        seed:
+          type: integer
+          format: int64
+          default: 42
+        batch_size:
+          type: integer
+          default: 1000
+        authors:
+          type: integer
+        books:
+          type: integer
+        readers:
+          type: integer
+        loans:
+          type: integer
+        reservations:
+          type: integer
+        copies_min:
+          type: integer
+        copies_max:
+          type: integer
+
+    SeedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        mode:
+          type: string
+        authors:
+          type: integer
+        books:
+          type: integer
+        readers:
+          type: integer
+        loans:
+          type: integer
+        reservations:
+          type: integer
+        duration:
+          type: string
+        hostname:
+          type: string

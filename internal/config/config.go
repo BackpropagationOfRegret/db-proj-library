@@ -8,13 +8,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL         string
-	HTTPAddr            string
-	MaxLoansPerReader   int
-	LoanDuration        time.Duration
-	ElasticsearchURL    string
-	ElasticsearchIndex  string
-	MigrationsPath      string
+	DatabaseURL        string
+	HTTPAddr           string
+	MaxLoansPerReader  int
+	LoanDuration       time.Duration
+	ElasticsearchURL   string
+	ElasticsearchIndex string
+	MigrationsPath     string
+	AdminToken         string
 }
 
 func Load() (Config, error) {
@@ -26,6 +27,7 @@ func Load() (Config, error) {
 		ElasticsearchURL:   env("ELASTICSEARCH_URL", "http://localhost:9200"),
 		ElasticsearchIndex: env("ELASTICSEARCH_INDEX", "books"),
 		MigrationsPath:     env("MIGRATIONS_PATH", "file://migrations"),
+		AdminToken:         env("ADMIN_TOKEN", ""),
 	}
 
 	if cfg.DatabaseURL == "" {
