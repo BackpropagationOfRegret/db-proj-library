@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD: library
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U library -d library"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - dokploy-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://library:library@postgres:5432/library?sslmode=disable
+      HTTP_ADDR: :8080
+      MIGRATIONS_PATH: file://migrations
+      MAX_LOANS_PER_READER: "5"
+      LOAN_DURATION_DAYS: "14"
+    ports:
+      - "8080:8080"
+    networks:
+      - dokploy-network
+
+volumes:
+  pgdata:
+
+networks:
+  dokploy-network:
+    external: true
