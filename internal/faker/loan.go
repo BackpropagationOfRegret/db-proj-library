@@ -7,39 +7,65 @@ import (
 )
 
 func (g *Generator) Loan(copyID, readerID int64) domain.Loan {
-	loanedAt := g.DateRange(time.Now().AddDate(-1, 0, 0), time.Now().AddDate(0, 0, -1))
-	dueAt := loanedAt.AddDate(0, 0, g.IntRange(7, 30))
-
+	now := time.Now().UTC()
 	statusRoll := g.IntRange(1, 100)
-	loan := domain.Loan{
-		CopyID:   copyID,
-		ReaderID: readerID,
-		LoanedAt: loanedAt,
-		DueAt:    dueAt,
-		Status:   domain.LoanActive,
-	}
 
 	switch {
 	case statusRoll <= 55:
-		returned := loanedAt.AddDate(0, 0, g.IntRange(1, 20))
-		if returned.After(time.Now()) {
-			returned = time.Now().Add(-time.Hour)
+		// returned: loaned_at < returned_at, due_at > loaned_at
+		loanedAt := g.DateRange(now.AddDate(-1, 0, 0), now.AddDate(0, 0, -14))
+		loanDays := g.IntRange(7, 30)
+		dueAt := loanedAt.AddDate(0, 0, loanDays)
+		returnedAt := loanedAt.AddDate(0, 0, g.IntRange(1, loanDays+7))
+		if returnedAt.After(now) {
+			returnedAt = now.Add(-time.Hour)
 		}
-		loan.ReturnedAt = &returned
-		loan.Status = domain.LoanReturned
-	case statusRoll <= 70:
-		loan.Status = domain.LoanOverdue
-		loan.DueAt = time.Now().AddDate(0, 0, -g.IntRange(1, 60))
-	default:
-		loan.Status = domain.LoanActive
-		loan.DueAt = time.Now().AddDate(0, 0, g.IntRange(1, 21))
-	}
+		if returnedAt.Before(loanedAt) {
+			returnedAt = loanedAt
+		}
+		return domain.Loan{
+			CopyID:     copyID,
+			ReaderID:   readerID,
+			LoanedAt:   loanedAt,
+			DueAt:      dueAt,
+			ReturnedAt: &returnedAt,
+			Status:     domain.LoanReturned,
+		}
 
-	return loan
+	case statusRoll <= 70:
+		// overdue: due_at in the past, but always after loaned_at
+		daysOverdue := g.IntRange(1, 45)
+		loanPeriod := g.IntRange(7, 30)
+		dueAt := now.AddDate(0, 0, -daysOverdue)
+		loanedAt := dueAt.AddDate(0, 0, -loanPeriod)
+		return domain.Loan{
+			CopyID:   copyID,
+			ReaderID: readerID,
+			LoanedAt: loanedAt,
+			DueAt:    dueAt,
+			Status:   domain.LoanOverdue,
+		}
+
+	default:
+		// active: due_at in the future
+		loanedAt := g.DateRange(now.AddDate(0, 0, -20), now.AddDate(0, 0, -1))
+		dueAt := now.AddDate(0, 0, g.IntRange(1, 21))
+		if !dueAt.After(loanedAt) {
+			dueAt = loanedAt.AddDate(0, 0, 7)
+		}
+		return domain.Loan{
+			CopyID:   copyID,
+			ReaderID: readerID,
+			LoanedAt: loanedAt,
+			DueAt:    dueAt,
+			Status:   domain.LoanActive,
+		}
+	}
 }
 
 func (g *Generator) Reservation(bookID, readerID int64) domain.Reservation {
-	reservedAt := g.DateRange(time.Now().AddDate(0, -3, 0), time.Now())
+	now := time.Now().UTC()
+	reservedAt := g.DateRange(now.AddDate(0, -3, 0), now)
 	return domain.Reservation{
 		BookID:     bookID,
 		ReaderID:   readerID,
