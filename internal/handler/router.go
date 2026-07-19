@@ -64,6 +64,7 @@ func (a *API) Routes() http.Handler {
 
 	if a.Admin != nil {
 		mux.HandleFunc("POST /api/v1/admin/seed", a.Admin.Seed)
+		mux.HandleFunc("POST /api/v1/admin/sync-search", a.Admin.SyncSearch)
 	}
 
 	return mux

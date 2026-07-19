@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/config"
-	"github.com/BackpropagationOfRegret/db-proj-library/internal/domain"
+	esrepo "github.com/BackpropagationOfRegret/db-proj-library/internal/repository/elasticsearch"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/repository/postgres"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/search"
 )
@@ -16,7 +16,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	recreate := flag.Bool("recreate-index", false, "drop and recreate search index")
-	batchSize := flag.Int("batch", 1000, "books batch size")
+	batchSize := flag.Int("batch", 500, "books batch size")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -35,43 +35,26 @@ func main() {
 	}
 	defer db.Close()
 
-	repos := postgres.NewRepos(db)
-	indexer := search.NewIndexer(search.NewNoopSearchRepository())
-
-	if *recreate {
-		logger.Info("recreate-index requested; elasticsearch client is not wired yet")
+	esClient, err := esrepo.Connect(cfg.ElasticsearchURL, cfg.ElasticsearchIndex)
+	if err != nil {
+		logger.Error("connect elasticsearch", "error", err)
+		os.Exit(1)
+	}
+	if err := esClient.Ping(ctx); err != nil {
+		logger.Error("ping elasticsearch", "error", err)
+		os.Exit(1)
 	}
 
-	offset := 0
-	total := 0
-	for {
-		books, err := repos.Books.List(ctx, offset, *batchSize)
-		if err != nil {
-			logger.Error("list books", "error", err)
-			os.Exit(1)
-		}
-		if len(books) == 0 {
-			break
-		}
+	repos := postgres.NewRepos(db)
+	indexer := search.NewIndexer(esClient, repos.Copies)
 
-		fullBooks := make([]domain.Book, 0, len(books))
-		for _, book := range books {
-			full, err := repos.Books.GetByID(ctx, book.ID)
-			if err != nil {
-				logger.Error("get book", "id", book.ID, "error", err)
-				os.Exit(1)
-			}
-			fullBooks = append(fullBooks, *full)
-		}
-
-		if err := indexer.BulkIndex(ctx, fullBooks); err != nil {
-			logger.Error("bulk index", "error", err)
-			os.Exit(1)
-		}
-
-		total += len(books)
-		offset += len(books)
-		logger.Info("indexed batch", "total", total)
+	total, err := search.SyncBooks(ctx, repos, esClient, indexer, search.SyncOptions{
+		BatchSize:     *batchSize,
+		RecreateIndex: *recreate,
+	})
+	if err != nil {
+		logger.Error("sync-search failed", "error", err)
+		os.Exit(1)
 	}
 
 	logger.Info("sync-search completed", "indexed", total)

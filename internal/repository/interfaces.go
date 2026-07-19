@@ -78,10 +78,13 @@ type FineRepository interface {
 }
 
 type SearchRepository interface {
+	EnsureIndex(ctx context.Context) error
+	DeleteIndex(ctx context.Context) error
 	Index(ctx context.Context, doc domain.BookDocument) error
 	BulkIndex(ctx context.Context, docs []domain.BookDocument) error
 	Delete(ctx context.Context, bookID int64) error
 	Search(ctx context.Context, query domain.SearchQuery) (*domain.SearchResult, error)
+	Ping(ctx context.Context) error
 }
 
 type TxManager interface {

@@ -7,22 +7,34 @@ import (
 	"os"
 	"time"
 
+	"github.com/BackpropagationOfRegret/db-proj-library/internal/repository"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/repository/postgres"
+	"github.com/BackpropagationOfRegret/db-proj-library/internal/search"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/seeder"
 )
 
 type AdminHandler struct {
 	repos      *postgres.Repos
+	searchRepo repository.SearchRepository
+	indexer    search.BookIndexer
 	adminToken string
 	logger     *slog.Logger
 }
 
-func NewAdminHandler(repos *postgres.Repos, adminToken string, logger *slog.Logger) *AdminHandler {
+func NewAdminHandler(
+	repos *postgres.Repos,
+	searchRepo repository.SearchRepository,
+	indexer search.BookIndexer,
+	adminToken string,
+	logger *slog.Logger,
+) *AdminHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &AdminHandler{
 		repos:      repos,
+		searchRepo: searchRepo,
+		indexer:    indexer,
 		adminToken: adminToken,
 		logger:     logger,
 	}
@@ -39,6 +51,12 @@ type seedRequest struct {
 	Reservations int    `json:"reservations"`
 	CopiesMin    int    `json:"copies_min"`
 	CopiesMax    int    `json:"copies_max"`
+	SyncSearch   *bool  `json:"sync_search"`
+}
+
+type syncSearchRequest struct {
+	BatchSize     int  `json:"batch_size"`
+	RecreateIndex bool `json:"recreate_index"`
 }
 
 func (h *AdminHandler) authorize(r *http.Request) bool {
@@ -64,6 +82,7 @@ func (h *AdminHandler) Seed(w http.ResponseWriter, r *http.Request) {
 
 	cfg := seeder.DefaultConfig()
 	cfg.Mode = seeder.ModeReset
+	syncSearch := true
 
 	var req seedRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -101,6 +120,9 @@ func (h *AdminHandler) Seed(w http.ResponseWriter, r *http.Request) {
 		if req.CopiesMax > 0 {
 			cfg.CopiesMax = req.CopiesMax
 		}
+		if req.SyncSearch != nil {
+			syncSearch = *req.SyncSearch
+		}
 	}
 
 	started := time.Now()
@@ -118,6 +140,25 @@ func (h *AdminHandler) Seed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	indexed := 0
+	if syncSearch && h.indexer != nil && h.searchRepo != nil {
+		count, err := search.SyncBooks(r.Context(), h.repos, h.searchRepo, h.indexer, search.SyncOptions{
+			BatchSize:     cfg.BatchSize,
+			RecreateIndex: true,
+		})
+		if err != nil {
+			h.logger.Error("admin seed sync-search failed", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error":    err.Error(),
+				"seeded":   true,
+				"indexed":  indexed,
+				"duration": time.Since(started).String(),
+			})
+			return
+		}
+		indexed = count
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       "ok",
 		"mode":         cfg.Mode,
@@ -126,8 +167,44 @@ func (h *AdminHandler) Seed(w http.ResponseWriter, r *http.Request) {
 		"readers":      cfg.Readers,
 		"loans":        cfg.Loans,
 		"reservations": cfg.Reservations,
+		"indexed":      indexed,
 		"duration":     time.Since(started).String(),
 		"hostname":     hostname(),
+	})
+}
+
+func (h *AdminHandler) SyncSearch(w http.ResponseWriter, r *http.Request) {
+	if !h.authorize(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if h.indexer == nil || h.searchRepo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "search is not configured"})
+		return
+	}
+
+	req := syncSearchRequest{BatchSize: 500}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+	}
+
+	started := time.Now()
+	indexed, err := search.SyncBooks(r.Context(), h.repos, h.searchRepo, h.indexer, search.SyncOptions{
+		BatchSize:     req.BatchSize,
+		RecreateIndex: req.RecreateIndex,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":   "ok",
+		"indexed":  indexed,
+		"duration": time.Since(started).String(),
 	})
 }
 

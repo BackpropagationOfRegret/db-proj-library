@@ -13,6 +13,8 @@ import (
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/events"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/handler"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/migrate"
+	esrepo "github.com/BackpropagationOfRegret/db-proj-library/internal/repository/elasticsearch"
+	"github.com/BackpropagationOfRegret/db-proj-library/internal/repository"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/repository/postgres"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/search"
 	"github.com/BackpropagationOfRegret/db-proj-library/internal/service"
@@ -43,14 +45,16 @@ func main() {
 
 	repos := postgres.NewRepos(db)
 	publisher := events.NewNoopPublisher()
-	indexer := search.NewIndexer(search.NewNoopSearchRepository())
+
+	searchRepo := newSearchRepository(ctx, cfg, logger)
+	indexer := search.NewIndexer(searchRepo, repos.Copies)
 
 	api := &handler.API{
 		Books:   handler.NewBookHandler(service.NewBookService(repos, indexer, publisher)),
 		Readers: handler.NewReaderHandler(service.NewReaderService(repos)),
 		Loans:   handler.NewLoanHandler(service.NewLoanService(repos, cfg, publisher)),
-		Search:  handler.NewSearchHandler(service.NewSearchService(search.NewNoopSearchRepository())),
-		Admin:   handler.NewAdminHandler(repos, cfg.AdminToken, logger),
+		Search:  handler.NewSearchHandler(service.NewSearchService(searchRepo)),
+		Admin:   handler.NewAdminHandler(repos, searchRepo, indexer, cfg.AdminToken, logger),
 	}
 
 	server := &http.Server{
@@ -75,4 +79,27 @@ func main() {
 	defer cancel()
 	_ = server.Shutdown(shutdownCtx)
 	logger.Info("library api stopped")
+}
+
+func newSearchRepository(ctx context.Context, cfg config.Config, logger *slog.Logger) repository.SearchRepository {
+	esClient, err := esrepo.Connect(cfg.ElasticsearchURL, cfg.ElasticsearchIndex)
+	if err != nil {
+		logger.Warn("elasticsearch disabled", "error", err)
+		return search.NewNoopSearchRepository()
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := esClient.Ping(pingCtx); err != nil {
+		logger.Warn("elasticsearch unavailable, using noop search", "url", cfg.ElasticsearchURL, "error", err)
+		return search.NewNoopSearchRepository()
+	}
+
+	if err := esClient.EnsureIndex(ctx); err != nil {
+		logger.Warn("elasticsearch ensure index failed, using noop search", "error", err)
+		return search.NewNoopSearchRepository()
+	}
+
+	logger.Info("elasticsearch connected", "url", cfg.ElasticsearchURL, "index", cfg.ElasticsearchIndex)
+	return esClient
 }

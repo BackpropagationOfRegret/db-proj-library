@@ -16,20 +16,35 @@ type BookIndexer interface {
 
 type Indexer struct {
 	search repository.SearchRepository
+	copies repository.CopyRepository
 }
 
-func NewIndexer(search repository.SearchRepository) *Indexer {
-	return &Indexer{search: search}
+func NewIndexer(searchRepo repository.SearchRepository, copies repository.CopyRepository) *Indexer {
+	return &Indexer{search: searchRepo, copies: copies}
 }
 
 func (i *Indexer) Index(ctx context.Context, book domain.Book) error {
-	return i.search.Index(ctx, ToDocument(book, 0))
+	available := 0
+	if i.copies != nil {
+		count, err := i.copies.CountAvailableByBook(ctx, book.ID)
+		if err == nil {
+			available = count
+		}
+	}
+	return i.search.Index(ctx, ToDocument(book, available))
 }
 
 func (i *Indexer) BulkIndex(ctx context.Context, books []domain.Book) error {
 	docs := make([]domain.BookDocument, 0, len(books))
 	for _, book := range books {
-		docs = append(docs, ToDocument(book, 0))
+		available := 0
+		if i.copies != nil {
+			count, err := i.copies.CountAvailableByBook(ctx, book.ID)
+			if err == nil {
+				available = count
+			}
+		}
+		docs = append(docs, ToDocument(book, available))
 	}
 	return i.search.BulkIndex(ctx, docs)
 }
@@ -68,6 +83,21 @@ func NewNoopSearchRepository() *NoopSearchRepository {
 	return &NoopSearchRepository{}
 }
 
+func (r *NoopSearchRepository) EnsureIndex(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
+func (r *NoopSearchRepository) DeleteIndex(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
+func (r *NoopSearchRepository) Ping(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
 func (r *NoopSearchRepository) Index(ctx context.Context, doc domain.BookDocument) error {
 	_ = ctx
 	_ = doc
@@ -88,7 +118,6 @@ func (r *NoopSearchRepository) Delete(ctx context.Context, bookID int64) error {
 
 func (r *NoopSearchRepository) Search(ctx context.Context, query domain.SearchQuery) (*domain.SearchResult, error) {
 	_ = ctx
-	_ = query
 	return &domain.SearchResult{
 		Hits:  []domain.SearchHit{},
 		Total: 0,
