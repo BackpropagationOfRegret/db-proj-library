@@ -29,13 +29,13 @@ func NewBookService(repos *postgres.Repos, indexer search.BookIndexer, publisher
 }
 
 type CreateBookInput struct {
-	Title           string
-	ISBN            string
-	PublicationYear int
-	Pages           int
-	Description     string
-	AuthorIDs       []int64
-	GenreIDs        []int64
+	Title           string  `json:"title"`
+	ISBN            string  `json:"isbn"`
+	PublicationYear int     `json:"publication_year"`
+	Pages           int     `json:"pages"`
+	Description     string  `json:"description"`
+	AuthorIDs       []int64 `json:"author_ids"`
+	GenreIDs        []int64 `json:"genre_ids"`
 }
 
 func (s *BookService) Create(ctx context.Context, input CreateBookInput) (*domain.Book, error) {

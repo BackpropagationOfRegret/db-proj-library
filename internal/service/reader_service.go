@@ -17,10 +17,10 @@ func NewReaderService(repos *postgres.Repos) *ReaderService {
 }
 
 type CreateReaderInput struct {
-	FirstName string
-	LastName  string
-	Email     string
-	Phone     string
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone"`
 }
 
 func (s *ReaderService) Create(ctx context.Context, input CreateReaderInput) (*domain.Reader, error) {

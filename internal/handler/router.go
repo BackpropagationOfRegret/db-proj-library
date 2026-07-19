@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"io/fs"
 	"net/http"
+
+	"github.com/BackpropagationOfRegret/db-proj-library/api"
 )
 
 type API struct {
@@ -16,6 +19,31 @@ func (a *API) Routes() http.Handler {
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(api.Files, "openapi.yaml")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "openapi unavailable"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	})
+
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(api.Files, "docs.html")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "docs unavailable"})
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	})
+	mux.HandleFunc("GET /docs/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs", http.StatusMovedPermanently)
 	})
 
 	mux.HandleFunc("POST /api/v1/books", a.Books.Create)
